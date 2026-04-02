@@ -1,0 +1,39 @@
+# ──────────────────────────────────────
+# Verilog/SystemVerilog Makefile (iverilog)
+# ──────────────────────────────────────
+
+# Source files
+SRC = tinker.sv
+TB  = testbench.sv
+
+# Output
+SIM_OUT = sim_out
+VCD     = waveform.vcd
+
+# Flags
+IVFLAGS = -g2012
+
+# ──────────────────────────────────────
+# Targets
+# ──────────────────────────────────────
+
+.PHONY: all sim wave clean
+
+# Default: compile and simulate
+all: sim
+
+# Compile
+$(SIM_OUT): $(SRC) $(TB)
+	iverilog $(IVFLAGS) -o $(SIM_OUT) $(SRC) $(TB)
+
+# Simulate (generates VCD if testbench has $dumpfile/$dumpvars)
+sim: $(SIM_OUT)
+	vvp $(SIM_OUT)
+
+# Open waveform viewer
+wave: sim
+	gtkwave $(VCD) &
+
+# Clean build artifacts
+clean:
+	rm -f $(SIM_OUT) $(VCD)
