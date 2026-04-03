@@ -64,7 +64,7 @@ module tinker_core(
 
     assign is_return = (opcode == 5'h0d);
 
-    memory_unit memory(
+    memory memory(
         .clk(clk),
         .reset(reset),
         .PC(PC),
@@ -101,7 +101,7 @@ module tinker_core(
                         (opcode == 5'h12) ? {L, rd_data[51:0]} :
                         alu_result;
 
-    register reg_file(
+    reg_file reg_file(
         .clk(clk),
         .reset(reset),
         .write_enable(reg_write_en),
