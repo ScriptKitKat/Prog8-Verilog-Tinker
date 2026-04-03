@@ -1,6 +1,5 @@
-
 `include "alu.sv"
-`include "memory.sv"
+`include "memory_reg.sv"
 
 module tinker_core(
     input clk,
