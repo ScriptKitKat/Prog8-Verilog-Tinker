@@ -68,7 +68,7 @@ module tinker_core(
     wire [63:0] mem_data_addr;
     assign mem_data_addr = is_return ? r31_data : alu_result;
 
-    memory_unit memory(
+    memory memory(
         .clk(clk),
         .reset(reset),
         .PC(PC),
@@ -109,7 +109,7 @@ module tinker_core(
     wire [4:0] write_reg;
     assign write_reg = (is_call || is_return) ? 5'd31 : rd;
 
-    register_file reg_file(
+    reg_file reg_file(
         .clk(clk),
         .reset(reset),
         .write_enable(reg_write_en),
