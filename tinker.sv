@@ -55,17 +55,25 @@ module tinker_core(
 
     assign is_L = is_alu_L || is_branch_L || is_mov_L;
 
-    assign reg_write_en = is_alu_reg || is_alu_L || is_mov_rd;
+    wire is_call, is_branch_reg;
+    assign is_call = (opcode == 5'h0c);
+    assign is_branch_reg = (opcode == 5'h08) || (opcode == 5'h09);
+
+    assign reg_write_en = is_alu_reg || is_alu_L || is_mov_rd || is_call || is_return;
     assign mem_write_en = (opcode == 5'h13) || (opcode == 5'h0c);
 
     assign is_return = (opcode == 5'h0d);
 
-    memory memory(
+    // For RETURN, memory read address is r31 (not alu_result)
+    wire [63:0] mem_data_addr;
+    assign mem_data_addr = is_return ? r31_data : alu_result;
+
+    memory_unit memory(
         .clk(clk),
         .reset(reset),
         .PC(PC),
         .instruction(instruction),
-        .data_address(alu_result), // rd + L
+        .data_address(mem_data_addr),
         .data_out(mem_read_data),
         .data_ready(mem_data_ready),
         .write_enable(mem_write_en),
@@ -97,12 +105,16 @@ module tinker_core(
                         (opcode == 5'h12) ? {L, rd_data[51:0]} :
                         alu_result;
 
-    reg_file reg_file(
+    // CALL/RETURN write to r31, all others write to rd
+    wire [4:0] write_reg;
+    assign write_reg = (is_call || is_return) ? 5'd31 : rd;
+
+    register_file reg_file(
         .clk(clk),
         .reset(reset),
         .write_enable(reg_write_en),
         .write_data(writeback_data),
-        .write_select(rd),
+        .write_select(write_reg),
         .read_sel1(rd),
         .read_sel2(rs),
         .read_sel3(rt),

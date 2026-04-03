@@ -54,16 +54,16 @@ module ALU(
         branch_target = PC + 64'd4;
         branch_taken = 1'b0;
         case (opcode)
-            5'h18: result = rs_data + rt_data; // ADD
-            5'h19: result = rd_data + extended_L; // ADDI
-            5'h1a: result = rs_data - rt_data; // SUB
-            5'h1b: result = rd_data - extended_L; // SUBI
-            5'h1c: result = rs_data * rt_data; // MUL
-            5'h1d: result = rs_data / rt_data; // DIV
+            5'h18: result = $signed(rs_data + $signed(rt_data); // ADD
+            5'h19: result = $signed(rd_data) + $signed(extended_L); // ADDI
+            5'h1a: result = $signed(rs_data) - $signed(rt_data); // SUB
+            5'h1b: result = $signed(rd_data) - $signed(extended_L); // SUBI
+            5'h1c: result = $signed(rs_data) * $signed(rt_data); // MUL
+            5'h1d: result = $signed(rs_data) / $signed(rt_data); // DIV
 
-            5'h00: result = rs_data & rt_data; // AND
-            5'h01: result = rs_data | rt_data; // OR
-            5'h02: result = rs_data ^ rt_data; // XOR
+            5'h00: result = $signed(rs_data) & $signed(rt_data); // AND
+            5'h01: result = $signed(rs_data) | $signed(rt_data); // OR
+            5'h02: result = $signed(rs_data) ^ $signed(rt_data); // XOR
             5'h03: result = ~rs_data; // NOT
 
             5'h04: result = rs_data >> rt_data; // SHFTR
@@ -97,9 +97,8 @@ module ALU(
                 branch_taken = 1'b1;
             end
             5'h0d: begin // return
-                result = r31_data - 64'd8;
+                result = r31_data + 64'd8; // restore SP (pop)
                 branch_taken = 1'b1;
-                // TODO: pc <- mem[r31 - 8]
             end
             5'h0e: begin // brgt rd, rs, rt
                 branch_target = rd_data;
@@ -109,10 +108,10 @@ module ALU(
             end
 
             // mov operations
-            5'h10: result = rs_data + L_data; // mov rd, (rs)(L)
+            5'h10: result = rs_data + extended_L; // mov rd, (rs)(L)
             5'h11: result = rs_data; // mov rd, rs
-            5'h12: result = L_data; // mov rd [52:63], L
-            5'h13: result = rd_data + L_data; // mov rd, L, rs
+            5'h12: result = extended_L; // mov rd [52:63], L
+            5'h13: result = rd_data + extended_L; // mov (rd)(L), rs
             
             // FPU operations in another file: fpu.sv
             5'h14: result = fpu_add_result; // FADD

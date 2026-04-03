@@ -163,7 +163,7 @@ module fpu_add(input [63:0] a, input [63:0] b, output reg [63:0] result);
                 end else if (~aInf & bInf) begin
                     result = b;
                 end else begin
-                    result = 64'h7ff0000000000000; // Infinity
+                    result = a; // both same-sign infinity, return either
                 end
             end
         end else if (aZero & bZero) begin
@@ -333,16 +333,20 @@ module fpu_div(input [63:0] a, input [63:0] b, output reg [63:0] result);
     reg [5:0] shift;
 
     always @(*) begin
-        
+
         sign = a[63] ^ b[63];
-        if (aNan | bNan | bZero | (aInf & bInf)) begin
+        if (aNan | bNan) begin
             result = 64'h7ff8000000000000; // NaN
-        end else if (bInf & (aNormal | aSubnormal)) begin
-            result = {sign, 63'h0}; // Zero
+        end else if (aInf & bInf) begin
+            result = 64'h7ff8000000000000; // NaN (inf/inf)
+        end else if (aInf) begin
+            result = {sign, 11'h7ff, 52'h0}; // inf/anything = inf
+        end else if (bZero) begin
+            result = 64'h7ff8000000000000; // NaN (num/0, 0/0)
         end else if (aZero) begin
             result = {sign, 63'h0}; // Zero
-        end else if (aInf) begin
-            result = {sign, 11'h7ff, 52'h0};
+        end else if (bInf) begin
+            result = {sign, 63'h0}; // num/inf = Zero
         end else begin
             // For normal and subnormal numbers, we would need to implement the actual division logic, which is complex and involves handling the exponent and significand separately. This is a placeholder for the actual division logic.
             sigA = {aNormal, a[51:0]};
@@ -365,8 +369,8 @@ module fpu_div(input [63:0] a, input [63:0] b, output reg [63:0] result);
 
             expResult = expA - expB + 1023;
 
-            divisor = {bNormal, b[51:0]};
-            dividend = {57'b0, aNormal, a[51:0]} << 55;
+            divisor = sigB;
+            dividend = {57'b0, sigA} << 55;
             begin
                 q = 0;
                 r = 0;
