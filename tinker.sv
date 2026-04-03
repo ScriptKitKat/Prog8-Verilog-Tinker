@@ -5,22 +5,19 @@ module tinker_core(
     input clk,
     input reset
 );
-    `include "constants.vh"
-
+    // CONTROL SIGNAL FLOW
     reg [63:0] PC;
     wire [63:0] next_PC;
 
-    // Instruction fetch
+    // Instruction fetch wire
     wire [31:0] instruction;
 
-    // Decode
+    // Decode outputs wires
     wire [4:0] opcode;
-    wire [4:0] rd_sel, rs_sel, rt_sel;
+    wire [4:0] rd, rs, rt;
     wire [11:0] L;
-    wire [63:0] extended_L;
-    assign extended_L = {{52{L[11]}}, L};
 
-    // Register data
+    // Register data outputs
     wire [63:0] rd_data, rs_data, rt_data, r31_data;
 
     // Memory
@@ -28,175 +25,130 @@ module tinker_core(
     wire mem_data_ready;
 
     // ALU
-    wire [63:0] alu_out;
+    wire [63:0] alu_result;
     wire alu_writeback;
+    wire [63:0] alu_branch_target;
+    wire alu_branch_taken;
 
-    // Branch logic (handled in tinker_core since ALU is now standalone)
-    reg [63:0] branch_target;
-    reg branch_taken;
+    // Control Instruction type classification
+    wire is_alu_reg; // add, sub, mul, div, and, or, xor, not, shftr, shftl, fadd, fsub, fmul, fpu_div_result
+    wire is_alu_L; // addi, subi, shftri, shftri
+    wire is_mov_rd; // mov rd, rs
+    wire is_mov_L;
+    wire is_branch_L; // brr L
+    wire is_L;
+    wire is_return;
 
-    // Control signals
-    wire is_load, is_store, is_call, is_return, is_halt;
-    wire is_branch;
-    wire mem_write_en;
     wire reg_write_en;
+    wire mem_write_en;
 
-    assign is_load   = (opcode == MOV_LD);
-    assign is_store  = (opcode == MOV_ST);
-    assign is_call   = (opcode == CALL);
-    assign is_return = (opcode == RET);
-    assign is_halt   = (opcode == 5'h1F);
-    assign is_branch = (opcode == BR) || (opcode == BRR_R) || (opcode == BRR_L) ||
-                       (opcode == BRNZ) || (opcode == CALL) || (opcode == RET) ||
-                       (opcode == BRGT);
+    assign is_alu_reg = (opcode == 5'h18) || (opcode == 5'h1a) || (opcode == 5'h1c) || (opcode == 5'h1d) || 
+    (opcode == 5'h00) || (opcode == 5'h01) || (opcode == 5'h02) || (opcode == 5'h03) || (opcode == 5'h04) ||
+    (opcode == 5'h06) || (opcode == 5'h14) || (opcode == 5'h15) || (opcode == 5'h16) || (opcode == 5'h17);
+    
+    assign is_alu_L = (opcode == 5'h19) || (opcode == 5'h1b) || (opcode == 5'h05) || (opcode == 5'h07);
 
-    // Memory write: store (0x13) and call (0x0c)
-    assign mem_write_en = is_store || is_call;
+    // also need to check if we have to read rd --> brr rd, brr rd, brnz, call, brgt, 
+    assign is_mov_rd = (opcode == 5'h10) || (opcode == 5'h11) || (opcode == 5'h12);
+    assign is_mov_L = (opcode == 5'h10) || (opcode == 5'h12) || (opcode == 5'h13);
+    assign is_branch_L = (opcode == 5'h0a);
 
-    // Register write: ALU writeback signal, plus loads
-    assign reg_write_en = (alu_writeback && !is_store) || is_load;
+    assign is_L = is_alu_L || is_branch_L || is_mov_L;
 
-    // What data goes to memory write port
-    wire [63:0] mem_write_data;
-    assign mem_write_data = is_call  ? (PC + 64'd4) :   // CALL: save return address
-                            is_store ? rs_data :          // store: rs value
-                            64'b0;
+    assign reg_write_en = is_alu_reg || is_alu_L || is_mov_rd;
+    assign mem_write_en = (opcode == 5'h13) || (opcode == 5'h0c);
 
-    // Memory write address
-    // For CALL: alu_out = r31 - 8 (but we need to compute this here since ALU just passes rd)
-    // For store: alu_out = rd + L (address)
-    wire [63:0] mem_write_addr;
-    assign mem_write_addr = is_call ? (r31_data - 64'd8) : alu_out;
+    assign is_return = (opcode == 5'h0d);
 
-    // Memory read address (for loads and return)
-    wire [63:0] mem_read_addr;
-    assign mem_read_addr = is_return ? r31_data : alu_out;
-
-    // Writeback data MUX
-    wire [63:0] writeback_data;
-    assign writeback_data = is_load       ? mem_read_data :
-                            (opcode == MOV_UP) ? {L, rd_data[51:0]} :
-                            alu_out;
-
-    // Branch logic — computed here, not in ALU
-    always @(*) begin
-        branch_target = PC + 64'd4;
-        branch_taken = 1'b0;
-
-        case (opcode)
-            BR: begin
-                branch_target = rd_data;
-                branch_taken = 1'b1;
-            end
-            BRR_R: begin
-                branch_target = PC + rd_data;
-                branch_taken = 1'b1;
-            end
-            BRR_L: begin
-                branch_target = PC + extended_L;
-                branch_taken = 1'b1;
-            end
-            BRNZ: begin
-                branch_target = rd_data;
-                if (rs_data != 64'b0)
-                    branch_taken = 1'b1;
-            end
-            CALL: begin
-                branch_target = rd_data;
-                branch_taken = 1'b1;
-            end
-            RET: begin
-                // branch_target comes from memory, handled in next_PC
-                branch_taken = 1'b0; // handled specially
-            end
-            BRGT: begin
-                branch_target = rd_data;
-                if (rs_data > rt_data)
-                    branch_taken = 1'b1;
-            end
-            default: begin
-                branch_target = PC + 64'd4;
-                branch_taken = 1'b0;
-            end
-        endcase
-    end
-
-    // Next PC
-    assign next_PC = is_halt       ? PC :
-                     is_return     ? mem_read_data :
-                     branch_taken  ? branch_target :
-                     (PC + 64'd4);
-
-    // ---- Module instantiations (names matter for autograder!) ----
-
-    memory_unit memory(
+    memory memory(
         .clk(clk),
         .reset(reset),
         .PC(PC),
         .instruction(instruction),
-        .data_address(mem_read_addr),
+        .data_address(alu_result), // rd + L
         .data_out(mem_read_data),
         .data_ready(mem_data_ready),
         .write_enable(mem_write_en),
-        .write_address(mem_write_addr),
+        .write_address(alu_result),
         .write_data(mem_write_data)
     );
-
+    
     instruction_decoder dec(
         .instruction(instruction),
         .opcode(opcode),
-        .rd(rd_sel),
-        .rs(rs_sel),
-        .rt(rt_sel),
+        .rd(rd),
+        .rs(rs),
+        .rt(rt),
         .L(L)
     );
 
-    register_file reg_file(
+    wire [63:0] mem_write_data;
+    assign mem_write_data = (opcode == 5'h0c) ? (PC + 64'd4) :
+                        (opcode == 5'h13) ? rs_data :
+                        rt_data;
+
+
+    assign next_PC = is_return ? mem_read_data :
+                    alu_branch_taken ? alu_branch_target :
+                    (PC + 64'd4);
+    
+    wire [63:0] writeback_data;
+    assign writeback_data = (opcode == 5'h10) ? mem_read_data :
+                        (opcode == 5'h12) ? {L, rd_data[51:0]} :
+                        alu_result;
+
+    reg_file reg_file(
         .clk(clk),
         .reset(reset),
         .write_enable(reg_write_en),
         .write_data(writeback_data),
-        .write_select(rd_sel),
-        .read_sel1(rd_sel),
-        .read_sel2(rs_sel),
-        .read_sel3(rt_sel),
+        .write_select(rd),
+        .read_sel1(rd),
+        .read_sel2(rs),
+        .read_sel3(rt),
         .read_data1(rd_data),
         .read_data2(rs_data),
         .read_data3(rt_data),
         .read_r31(r31_data)
     );
 
+    
     ALU alu(
-        .clk(clk),
         .opcode(opcode),
-        .rd(rd_data),
-        .rs(rs_data),
-        .rt(rt_data),
-        .lit(L),
-        .out(alu_out),
-        .writeback(alu_writeback)
+        .PC(PC),
+        .rd_data(rd_data),
+        .rs_data(rs_data),
+        .rt_data(rt_data),
+        .r31_data(r31_data),
+        .L_data(L),
+        .result(alu_result),
+        .writeback(alu_writeback),
+        .branch_target(alu_branch_target),
+        .branch_taken(alu_branch_taken)
     );
-
-    // PC register
+    
     always @(posedge clk or posedge reset) begin
-        if (reset)
+        if (reset) begin
             PC <= `START;
-        else
+        end else begin
             PC <= next_PC;
+        end
     end
 endmodule
 
 module instruction_decoder(
     input [31:0] instruction,
-    output [4:0] opcode,
-    output [4:0] rd,
-    output [4:0] rs,
-    output [4:0] rt,
-    output [11:0] L
+    output reg [4:0] opcode,
+    output reg [4:0] rd,
+    output reg [4:0] rs,
+    output reg [4:0] rt,
+    output reg [11:0] L
 );
-    assign opcode = instruction[4:0];
-    assign rd     = instruction[9:5];
-    assign rs     = instruction[14:10];
-    assign rt     = instruction[19:15];
-    assign L      = instruction[31:20];
+    always @(*) begin
+        opcode = instruction[4:0];
+        rd = instruction[9:5];
+        rs = instruction[14:10];
+        rt = instruction[19:15];
+        L = instruction[31:20];
+    end
 endmodule
