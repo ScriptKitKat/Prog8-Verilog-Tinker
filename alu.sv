@@ -54,16 +54,16 @@ module ALU(
         branch_target = PC + 64'd4;
         branch_taken = 1'b0;
         case (opcode)
-            5'h18: result = $signed(rs_data + $signed(rt_data); // ADD
-            5'h19: result = $signed(rd_data) + $signed(extended_L); // ADDI
-            5'h1a: result = $signed(rs_data) - $signed(rt_data); // SUB
-            5'h1b: result = $signed(rd_data) - $signed(extended_L); // SUBI
-            5'h1c: result = $signed(rs_data) * $signed(rt_data); // MUL
-            5'h1d: result = $signed(rs_data) / $signed(rt_data); // DIV
+            5'h18: result = rs_data + rt_data; // ADD
+            5'h19: result = rd_data + extended_L; // ADDI
+            5'h1a: result = rs_data - rt_data; // SUB
+            5'h1b: result = rd_data - extended_L; // SUBI
+            5'h1c: result = rs_data * rt_data; // MUL
+            5'h1d: result = rs_data / rt_data; // DIV
 
-            5'h00: result = $signed(rs_data) & $signed(rt_data); // AND
-            5'h01: result = $signed(rs_data) | $signed(rt_data); // OR
-            5'h02: result = $signed(rs_data) ^ $signed(rt_data); // XOR
+            5'h00: result = rs_data & rt_data; // AND
+            5'h01: result = rs_data | rt_data; // OR
+            5'h02: result = rs_data ^ rt_data; // XOR
             5'h03: result = ~rs_data; // NOT
 
             5'h04: result = rs_data >> rt_data; // SHFTR
