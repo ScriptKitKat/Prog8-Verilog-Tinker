@@ -16,14 +16,9 @@ module tinker_core(
     wire [4:0] opcode;
     wire [4:0] rd, rs, rt;
     wire [11:0] L;
-    wire [63:0] extended_L;
-    assign extended_L = {{52{L[11]}}, L};
 
     // Register data outputs
-    wire [63:0] rd_data;
-    wire [63:0] rs_data;
-    wire [63:0] rt_data;
-    wire [63:0] r31_data;
+    wire [63:0] rd_data, rs_data, rt_data, r31_data;
 
     // Memory
     wire [63:0] mem_read_data;
@@ -31,6 +26,7 @@ module tinker_core(
 
     // ALU
     wire [63:0] alu_result;
+    wire alu_writeback;
     wire [63:0] alu_branch_target;
     wire alu_branch_taken;
 
@@ -124,8 +120,9 @@ module tinker_core(
         .rs_data(rs_data),
         .rt_data(rt_data),
         .r31_data(r31_data),
-        .L_data(extended_L),
+        .L_data(L),
         .result(alu_result),
+        .writeback(alu_writeback),
         .branch_target(alu_branch_target),
         .branch_taken(alu_branch_taken)
     );

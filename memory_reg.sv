@@ -1,31 +1,30 @@
-`define MEM_SIZE 1024*512
-`define START 16'h2000
+`define MEM_SIZE (1024*512)
+`define START 64'h2000
 
-module memory(
+module memory_unit(
     input clk,
     input reset,
-    // instruction fetch
     input [63:0] PC,
     output [31:0] instruction,
-    // data load
     input [63:0] data_address,
     output [63:0] data_out,
     output data_ready,
-    // data write
     input write_enable,
     input [63:0] write_address,
     input [63:0] write_data
 );
-    reg [7:0] bytes [0:`MEM_SIZE - 1];
+    reg [7:0] bytes [0:`MEM_SIZE-1];
 
     assign instruction = {bytes[PC + 3], bytes[PC + 2], bytes[PC + 1], bytes[PC]};
 
-    assign data_out = {bytes[data_address + 7], bytes[data_address + 6], bytes[data_address + 5], bytes[data_address + 4],
-                       bytes[data_address + 3], bytes[data_address + 2], bytes[data_address + 1], bytes[data_address]};
+    assign data_out = {bytes[data_address + 7], bytes[data_address + 6],
+                       bytes[data_address + 5], bytes[data_address + 4],
+                       bytes[data_address + 3], bytes[data_address + 2],
+                       bytes[data_address + 1], bytes[data_address]};
 
     assign data_ready = 1'b1;
 
-    always @(posedge clk or posedge reset) begin
+    always @(posedge clk) begin
         if (write_enable) begin
             bytes[write_address] <= write_data[7:0];
             bytes[write_address + 1] <= write_data[15:8];
@@ -39,7 +38,7 @@ module memory(
     end
 endmodule
 
-module reg_file(
+module register_file(
     input clk,
     input reset,
     input write_enable,
@@ -53,9 +52,8 @@ module reg_file(
     output [63:0] read_data3,
     output [63:0] read_r31
 );
-    reg [63:0] registers [31:0];
+    reg [63:0] registers [0:31];
 
-    // Reads are combinational
     assign read_data1 = registers[read_sel1];
     assign read_data2 = registers[read_sel2];
     assign read_data3 = registers[read_sel3];
@@ -67,7 +65,7 @@ module reg_file(
             for (i = 0; i < 31; i = i + 1) begin
                 registers[i] <= 64'b0;
             end
-            registers[31] <= `MEM_SIZE; // Stack Pointer initialized to the end of memory
+            registers[31] <= `MEM_SIZE;
         end else if (write_enable && write_select != 5'b0) begin
             registers[write_select] <= write_data;
         end

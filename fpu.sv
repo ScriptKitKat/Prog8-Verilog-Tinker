@@ -2,7 +2,7 @@ module fpu_class(input [63:0] f, output nan, output infinity, output zero, outpu
     wire expOnes = &f[62:52];
     wire expZero = ~|f[62:52];
     wire fracZero = ~|f[51:0];
-
+ 
     assign nan = expOnes & ~fracZero;
     assign infinity = expOnes & fracZero;
     assign zero = expZero & fracZero;

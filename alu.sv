@@ -7,13 +7,17 @@ module ALU(
     input [63:0] rs_data,
     input [63:0] rt_data,
     input [63:0] r31_data,
-    input [63:0] L_data,
+    input [11:0] L_data,
     output reg [63:0] result,
+    output reg writeback,
     output reg [63:0] branch_target,
     output reg branch_taken
 );
 // control signal:
 // use register or L bit for operation
+    wire [63:0] extended_L;
+    assign extended_L = {{52{L_data[11]}}, L_data};
+
     wire [63:0] fpu_add_result;
     wire [63:0] fpu_sub_result;
     wire [63:0] fpu_mul_result;
@@ -51,9 +55,9 @@ module ALU(
         branch_taken = 1'b0;
         case (opcode)
             5'h18: result = rs_data + rt_data; // ADD
-            5'h19: result = rd_data + L_data; // ADDI
+            5'h19: result = rd_data + extended_L; // ADDI
             5'h1a: result = rs_data - rt_data; // SUB
-            5'h1b: result = rd_data - L_data; // SUBI
+            5'h1b: result = rd_data - extended_L; // SUBI
             5'h1c: result = rs_data * rt_data; // MUL
             5'h1d: result = rs_data / rt_data; // DIV
 
@@ -63,9 +67,9 @@ module ALU(
             5'h03: result = ~rs_data; // NOT
 
             5'h04: result = rs_data >> rt_data; // SHFTR
-            5'h05: result = rd_data >> L_data; // SHFTRI
+            5'h05: result = rd_data >> extended_L; // SHFTRI
             5'h06: result = rs_data << rt_data; // SHFTL
-            5'h07: result = rd_data << L_data; // SHFTLI
+            5'h07: result = rd_data << extended_L; // SHFTLI
 
             5'h08: begin // br rd
                 branch_target = rd_data;
@@ -76,7 +80,7 @@ module ALU(
                 branch_taken = 1'b1;
             end
             5'h0a: begin // brr L
-                branch_target = L_data + PC;
+                branch_target = extended_L + PC;
                 branch_taken = 1'b1;
             end
 
@@ -119,4 +123,3 @@ module ALU(
         endcase
     end
 endmodule
-
