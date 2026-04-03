@@ -102,7 +102,7 @@ module tinker_core(
     
     wire [63:0] writeback_data;
     assign writeback_data = (opcode == 5'h10) ? mem_read_data :
-                        (opcode == 5'h12) ? {L, rd_data[51:0]} :
+                        (opcode == 5'h12) ? {rd_data[63:12], L} :
                         alu_result;
 
     // CALL/RETURN write to r31, all others write to rd
