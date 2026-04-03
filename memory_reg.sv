@@ -1,7 +1,7 @@
 `define MEM_SIZE (1024*512)
 `define START 64'h2000
 
-module memory_unit(
+module memory(
     input clk,
     input reset,
     input [63:0] PC,
@@ -38,7 +38,7 @@ module memory_unit(
     end
 endmodule
 
-module register_file(
+module reg_file(
     input clk,
     input reset,
     input write_enable,

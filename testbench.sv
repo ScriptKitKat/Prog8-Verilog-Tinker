@@ -43,10 +43,10 @@ module tinker_core_tb;
         input [63:0] addr;
         input [31:0] instr;
         begin
-            uut.memory.memory[addr]     = instr[7:0];
-            uut.memory.memory[addr + 1] = instr[15:8];
-            uut.memory.memory[addr + 2] = instr[23:16];
-            uut.memory.memory[addr + 3] = instr[31:24];
+            uut.memory.bytes[addr]     = instr[7:0];
+            uut.memory.bytes[addr + 1] = instr[15:8];
+            uut.memory.bytes[addr + 2] = instr[23:16];
+            uut.memory.bytes[addr + 3] = instr[31:24];
         end
     endtask
 
@@ -55,14 +55,14 @@ module tinker_core_tb;
         input [63:0] addr;
         input [63:0] value;
         begin
-            uut.memory.memory[addr]     = value[7:0];
-            uut.memory.memory[addr + 1] = value[15:8];
-            uut.memory.memory[addr + 2] = value[23:16];
-            uut.memory.memory[addr + 3] = value[31:24];
-            uut.memory.memory[addr + 4] = value[39:32];
-            uut.memory.memory[addr + 5] = value[47:40];
-            uut.memory.memory[addr + 6] = value[55:48];
-            uut.memory.memory[addr + 7] = value[63:56];
+            uut.memory.bytes[addr]     = value[7:0];
+            uut.memory.bytes[addr + 1] = value[15:8];
+            uut.memory.bytes[addr + 2] = value[23:16];
+            uut.memory.bytes[addr + 3] = value[31:24];
+            uut.memory.bytes[addr + 4] = value[39:32];
+            uut.memory.bytes[addr + 5] = value[47:40];
+            uut.memory.bytes[addr + 6] = value[55:48];
+            uut.memory.bytes[addr + 7] = value[63:56];
         end
     endtask
 
@@ -110,10 +110,10 @@ module tinker_core_tb;
         reg [63:0] actual;
         begin
             test_num = test_num + 1;
-            actual = {uut.memory.memory[addr+7], uut.memory.memory[addr+6],
-                      uut.memory.memory[addr+5], uut.memory.memory[addr+4],
-                      uut.memory.memory[addr+3], uut.memory.memory[addr+2],
-                      uut.memory.memory[addr+1], uut.memory.memory[addr]};
+            actual = {uut.memory.bytes[addr+7], uut.memory.bytes[addr+6],
+                      uut.memory.bytes[addr+5], uut.memory.bytes[addr+4],
+                      uut.memory.bytes[addr+3], uut.memory.bytes[addr+2],
+                      uut.memory.bytes[addr+1], uut.memory.bytes[addr]};
             if (actual === expected) begin
                 $display("  PASS [%0d] %0s: mem[0x%h] = 0x%016h", test_num, test_name, addr, expected);
                 pass_count = pass_count + 1;
@@ -143,7 +143,7 @@ module tinker_core_tb;
             reset = 0;
             // Clear instruction memory around START
             for (j = 0; j < 256; j = j + 1) begin
-                uut.memory.memory[16'h2000 + j] = 8'h00;
+                uut.memory.bytes[16'h2000 + j] = 8'h00;
             end
         end
     endtask
