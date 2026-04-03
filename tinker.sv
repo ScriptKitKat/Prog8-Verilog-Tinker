@@ -41,8 +41,6 @@ module tinker_core(
     wire is_mov_L;
     wire is_branch_L; // brr L
     wire is_L;
-    wire is_load;
-    wire is_store;
     wire is_return;
 
     wire reg_write_en;
@@ -99,7 +97,9 @@ module tinker_core(
                     (PC + 64'd4);
     
     wire [63:0] writeback_data;
-    assign writeback_data = (opcode == 5'h10) ? mem_read_data : alu_result;
+    assign writeback_data = (opcode == 5'h10) ? mem_read_data :
+                        (opcode == 5'h12) ? {L, rd_data[51:0]} :
+                        alu_result;
 
     register reg_file(
         .clk(clk),

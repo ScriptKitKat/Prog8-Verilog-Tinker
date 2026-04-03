@@ -316,7 +316,7 @@ module fpu_div(input [63:0] a, input [63:0] b, output reg [63:0] result);
         end
     endfunction
 
-    reg [55:0] q;
+    reg [56:0] q;
     reg[109:0] dividend;
     reg[52:0] divisor;
     reg [109:0] r;
