@@ -68,6 +68,11 @@ module tinker_core(
     wire [63:0] mem_data_addr;
     assign mem_data_addr = is_return ? r31_data : alu_result;
 
+    wire [63:0] mem_write_data;
+    assign mem_write_data = (opcode == 5'h0c) ? (PC + 64'd4) :
+                        (opcode == 5'h13) ? rs_data :
+                        rt_data;
+
     memory memory(
         .clk(clk),
         .reset(reset),
@@ -89,12 +94,6 @@ module tinker_core(
         .rt(rt),
         .L(L)
     );
-
-    wire [63:0] mem_write_data;
-    assign mem_write_data = (opcode == 5'h0c) ? (PC + 64'd4) :
-                        (opcode == 5'h13) ? rs_data :
-                        rt_data;
-
 
     assign next_PC = is_return ? mem_read_data :
                     alu_branch_taken ? alu_branch_target :
@@ -157,10 +156,10 @@ module instruction_decoder(
     output reg [11:0] L
 );
     always @(*) begin
-        opcode = instruction[4:0];
-        rd = instruction[9:5];
-        rs = instruction[14:10];
-        rt = instruction[19:15];
-        L = instruction[31:20];
+        opcode = instruction[31:27];
+        rd = instruction[26:22];
+        rs = instruction[21:17];
+        rt = instruction[16:12];
+        L = instruction[11:0];
     end
 endmodule
