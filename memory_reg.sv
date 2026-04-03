@@ -1,7 +1,7 @@
 `define MEM_SIZE (1024*512)
 `define START 64'h2000
 
-module memory(
+module memory_unit(
     input clk,
     input reset,
     input [63:0] PC,
@@ -26,7 +26,7 @@ module memory(
 
     always @(posedge clk) begin
         if (write_enable) begin
-            bytes[write_address] <= write_data[7:0];
+            bytes[write_address]     <= write_data[7:0];
             bytes[write_address + 1] <= write_data[15:8];
             bytes[write_address + 2] <= write_data[23:16];
             bytes[write_address + 3] <= write_data[31:24];
@@ -38,7 +38,7 @@ module memory(
     end
 endmodule
 
-module reg_file(
+module register_file(
     input clk,
     input reset,
     input write_enable,

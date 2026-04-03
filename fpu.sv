@@ -1,23 +1,22 @@
 module fpu_class(input [63:0] f, output nan, output infinity, output zero, output subnormal, output normal);
-    wire expOnes = &f[62:52];
-    wire expZero = ~|f[62:52];
+    wire expOnes  = &f[62:52];
+    wire expZero  = ~|f[62:52];
     wire fracZero = ~|f[51:0];
- 
-    assign nan = expOnes & ~fracZero;
-    assign infinity = expOnes & fracZero;
-    assign zero = expZero & fracZero;
-    assign subnormal = expZero & ~fracZero;
-    assign normal = ~expOnes & ~expZero;
+    assign nan       = expOnes  & ~fracZero;
+    assign infinity  = expOnes  &  fracZero;
+    assign zero      = expZero  &  fracZero;
+    assign subnormal = expZero  & ~fracZero;
+    assign normal    = ~expOnes & ~expZero;
 endmodule
 
 module fpu_mul(input [63:0] a, input [63:0] b, output reg [63:0] result);
     wire aNan, aInf, aZero, aSubnormal, aNormal;
     wire bNan, bInf, bZero, bSubnormal, bNormal;
-
     fpu_class classA(.f(a), .nan(aNan), .infinity(aInf), .zero(aZero), .subnormal(aSubnormal), .normal(aNormal));
     fpu_class classB(.f(b), .nan(bNan), .infinity(bInf), .zero(bZero), .subnormal(bSubnormal), .normal(bNormal));
 
-    function [5:0] count_leading_zeros(input [52:0] sig);
+    function [5:0] count_leading_zeros;
+        input [52:0] sig;
         integer i;
         begin : clz_loop
             count_leading_zeros = 0;
@@ -28,103 +27,58 @@ module fpu_mul(input [63:0] a, input [63:0] b, output reg [63:0] result);
         end
     endfunction
 
-    reg signed [12:0] shiftAmount;
-    reg guard, round_bit, sticky;
-    reg [52:0] sigFinal;
-    reg [52:0] sigA;
-    reg [52:0] sigB;
-
-    reg [5:0] shift;
-    reg signed [12:0] expA, expB;
-    reg signed [10:0] expResult;
-    reg [105:0] sigResult;
     reg sign;
+    reg signed [12:0] expA, expB, expResult, shiftAmount;
+    reg [52:0] sigA, sigB, sigFinal;
+    reg [105:0] sigResult;
+    reg [5:0] shift;
+    reg guard, round_bit, sticky;
 
     always @(*) begin
+        sign = a[63] ^ b[63];
         if (aNan | bNan | (aInf & bZero) | (bInf & aZero)) begin
-            result = 64'h7ff8000000000000; // NaN
-        end else if ((aInf & ~bZero) | (~aZero & bInf)) begin
-            result = {a[63] ^ b[63], 11'h7ff, 52'h0};
+            result = 64'h7ff8000000000000;
+        end else if (aInf | bInf) begin
+            result = {sign, 11'h7ff, 52'h0};
         end else if (aZero | bZero) begin
-            result = {a[63] ^ b[63], 63'h0}; // Zero
+            result = {sign, 63'h0};
         end else begin
-            // For normal and subnormal numbers, we would need to implement the actual multiplication logic, which is complex and involves handling the exponent and significand separately. This is a placeholder for the actual multiplication logic.
-            result = 64'h0; // Placeholder
-            result[63] = a[63] ^ b[63]; // Sign bit
-
             sigA = {aNormal, a[51:0]};
             sigB = {bNormal, b[51:0]};
+            if (aNormal) expA = $signed({1'b0, a[62:52]}) - 1023;
+            else begin shift = count_leading_zeros(sigA); sigA = sigA << shift; expA = -1022 - $signed({7'b0, shift}); end
+            if (bNormal) expB = $signed({1'b0, b[62:52]}) - 1023;
+            else begin shift = count_leading_zeros(sigB); sigB = sigB << shift; expB = -1022 - $signed({7'b0, shift}); end
 
-            // pre-normalize subnormal numbers
-            if (aNormal) begin
-                expA = a[62:52] - 1023; // Unbias the exponent
-            end else begin
-                shift = count_leading_zeros(sigA);
-                sigA = sigA << shift; // Normalize the significand
-                expA = -1022 - shift; // Adjust exponent for subnormal
-            end
-            if (bNormal) begin
-                expB = b[62:52] - 1023; // Unbias the exponent
-            end else begin
-                shift = count_leading_zeros(sigB);
-                sigB = sigB << shift; // Normalize the significand
-                expB = -1022 - shift; // Adjust exponent for subnormal
-            end
+            expResult = expA + expB + 1023;
+            sigResult = sigA * sigB;
+            if (sigResult[105]) begin expResult = expResult + 1; sigResult = sigResult >> 1; end
 
-            expResult = expA + expB + 1023; // Add exponents
-            sigResult = sigA * sigB; // Multiply significands
-
-            if (sigResult[105]) begin
-                expResult = expResult + 1; // Normalize if the result is too large
-                sigResult = sigResult >> 1;
-            end
-
-            // Rounding
-            // [104] is the leading bit
-            // [103: 52] are the fraction bits
-            // [51] guard bit, [50] round bit, and [49:0] sticky bits
             sigFinal = sigResult[104:52];
-
-            guard = sigResult[51];
-            round_bit = sigResult[50];
-            sticky = |sigResult[49:0];
-            // 000 to 011 would round down, 101 to 111 would round up, and 100 would round to the nearest even
+            guard = sigResult[51]; round_bit = sigResult[50]; sticky = |sigResult[49:0];
             if (guard & (round_bit | sigFinal[0] | sticky)) begin
-                sigFinal = sigFinal + 1; // Round up
-                if (sigFinal == 53'h20000000000000) begin
-                    expResult = expResult + 1; // Handle rounding overflow
-                    sigFinal = 53'h10000000000000; // Reset to normalized value
-                end
+                sigFinal = sigFinal + 1;
+                if (sigFinal == 53'h20000000000000) begin expResult = expResult + 1; sigFinal = 53'h10000000000000; end
             end
 
-            // Handle overflow and underflow
-            sign = a[63] ^ b[63];
-            if (expResult >= 2047) begin
-                result = {sign, 11'h7ff, 52'h0}; // Overflow to Infinity
-            end else if (expResult <= 0) begin
-                shiftAmount = 1 - expResult; // Calculate how much to shift for subnormal
-                if (shiftAmount < 53) begin
-                    sigFinal = sigFinal >> shiftAmount; // Shift to create subnormal result
-                    result = {sign, 11'h0, sigFinal[51:0]}; // Subnormal result
-                end else begin
-                    result = {sign, 63'h0}; // Underflow to Zero
-                end
-            end else begin
-                result = {sign, expResult[10:0], sigFinal[51:0]}; // Normalized result
-            end
+            if (expResult >= 2047) result = {sign, 11'h7ff, 52'h0};
+            else if (expResult <= 0) begin
+                shiftAmount = 1 - expResult;
+                if (shiftAmount < 53) begin sigFinal = sigFinal >> shiftAmount; result = {sign, 11'h0, sigFinal[51:0]}; end
+                else result = {sign, 63'h0};
+            end else result = {sign, expResult[10:0], sigFinal[51:0]};
         end
     end
 endmodule
 
 module fpu_add(input [63:0] a, input [63:0] b, output reg [63:0] result);
-    // Similar to multiplication, we would need to implement the actual addition logic, which involves aligning the exponents and adding the significands. This is a placeholder for the actual addition logic.
     wire aNan, aInf, aZero, aSubnormal, aNormal;
     wire bNan, bInf, bZero, bSubnormal, bNormal;
-
     fpu_class classA(.f(a), .nan(aNan), .infinity(aInf), .zero(aZero), .subnormal(aSubnormal), .normal(aNormal));
     fpu_class classB(.f(b), .nan(bNan), .infinity(bInf), .zero(bZero), .subnormal(bSubnormal), .normal(bNormal));
 
-    function [5:0] count_leading_zeros(input [55:0] sig);
+    function [5:0] count_leading_zeros;
+        input [55:0] sig;
         integer i;
         begin : clz_loop
             count_leading_zeros = 0;
@@ -135,163 +89,105 @@ module fpu_add(input [63:0] a, input [63:0] b, output reg [63:0] result);
         end
     endfunction
 
-    reg [52:0] augendSig;
-    reg [52:0] addendSig;
-    reg signed [10:0] shift;
-    reg signed [10:0] expResult;
-    reg signed [10:0] expA, expB;
+    reg [52:0] augendSig, addendSig;
+    reg signed [12:0] shift, expResult;
     reg sign;
-
     reg guard, round_bit, sticky;
-    reg [55:0] extAugend;
-    reg [55:0] extAddend;
+    reg [55:0] extAugend, extAddend;
     reg [52:0] sigFinal;
-
-    reg [56:0] sumSig;
-    reg [56:0] diffSig;
-    reg[5:0] shiftAmount;
+    reg [56:0] sumSig, diffSig;
+    reg [5:0] shiftAmount;
+    reg signed [12:0] expA, expB;
 
     always @(*) begin
         if (aNan | bNan) begin
-            result = 64'h7ff8000000000000; // NaN
-        end else if ((aInf | bInf)) begin
-            if ((aInf & bInf) & (a[63] ^ b[63])) begin
-                result = 64'h7ff8000000000000; // NaN
-            end else begin
-                if (aInf & ~bInf) begin
-                    result = a;
-                end else if (~aInf & bInf) begin
-                    result = b;
-                end else begin
-                    result = 64'h7ff0000000000000; // Infinity
-                end
-            end
+            result = 64'h7ff8000000000000;
+        end else if (aInf & bInf) begin
+            if (a[63] == b[63]) result = a;
+            else result = {1'b1, 11'h7ff, 1'b1, 51'h0};
+        end else if (aInf) begin
+            result = a;
+        end else if (bInf) begin
+            result = b;
         end else if (aZero & bZero) begin
-            result = {(a[63] & b[63]), 63'h0}; // Zero, negative zero if both is negative
+            result = {(a[63] & b[63]), 63'h0};
         end else if (aZero) begin
             result = b;
         end else if (bZero) begin
             result = a;
         end else begin
-            expA = aNormal ? a[62:52] : 11'd1; 
-            expB = bNormal ? b[62:52] : 11'd1;
+            expA = aNormal ? $signed({1'b0, a[62:52]}) : 13'd1;
+            expB = bNormal ? $signed({1'b0, b[62:52]}) : 13'd1;
+
+            augendSig = 0; addendSig = 0; sign = 0; shift = 0; expResult = 0;
 
             if (expA > expB) begin
-                augendSig[52:0] = {aNormal, a[51:0]};
-                addendSig[52:0] = {bNormal, b[51:0]};
-                sign = a[63];
-                expResult = expA;
-                shift = a[62:52] - b[62:52];
-                // a has larger exponent, align b to a
+                augendSig = {aNormal, a[51:0]}; addendSig = {bNormal, b[51:0]};
+                sign = a[63]; expResult = expA; shift = expA - expB;
             end else if (expA < expB) begin
-                augendSig[52:0] = {bNormal, b[51:0]};
-                addendSig[52:0] = {aNormal, a[51:0]};
-                sign = b[63];
-                expResult = expB;
-                shift = b[62:52] - a[62:52];
-                // b has larger exponent, align a to b
+                augendSig = {bNormal, b[51:0]}; addendSig = {aNormal, a[51:0]};
+                sign = b[63]; expResult = expB; shift = expB - expA;
             end else begin
+                shift = 0; expResult = expA;
                 if (a[63] == b[63]) begin
-                    sign = a[63]; // If exponents are equal, use the sign of a (or b, since they are the same)
-                    augendSig[52:0] = {aNormal, a[51:0]};
-                    addendSig[52:0] = {bNormal, b[51:0]};
+                    sign = a[63]; augendSig = {aNormal, a[51:0]}; addendSig = {bNormal, b[51:0]};
                 end else begin
-                    if (a[51:0] > b[51:0]) begin
-                        sign = a[63];
-                        augendSig[52:0] = {aNormal, a[51:0]};
-                        addendSig[52:0] = {bNormal, b[51:0]};
-                    end else if (a[51:0] < b[51:0]) begin
-                        sign = b[63];
-                        augendSig[52:0] = {bNormal, b[51:0]};
-                        addendSig[52:0] = {aNormal, a[51:0]};
-                    end else begin
-                        sign = 0;
-                        augendSig[52:0] = {bNormal, b[51:0]};
-                        addendSig[52:0] = {aNormal, a[51:0]};
-                    end
+                    if (a[51:0] > b[51:0]) begin sign = a[63]; augendSig = {aNormal, a[51:0]}; addendSig = {bNormal, b[51:0]};
+                    end else if (a[51:0] < b[51:0]) begin sign = b[63]; augendSig = {bNormal, b[51:0]}; addendSig = {aNormal, a[51:0]};
+                    end else begin sign = 0; augendSig = {aNormal, a[51:0]}; addendSig = {bNormal, b[51:0]}; end
                 end
             end
-            
-            extAugend = {augendSig, 3'b0}; // Extend augend significand for potential overflow
-            extAddend = {addendSig, 3'b0}; // Extend addend significand for potential overflow
-            sticky = shift == 0 ? 0 : |(extAddend << (56 - shift));
 
-            extAddend = extAddend >> shift; // Align addend significand to augend
+            extAugend = {augendSig, 3'b0};
+            extAddend = {addendSig, 3'b0};
+            if (shift == 0) sticky = 0;
+            else if (shift >= 56) sticky = |extAddend;
+            else sticky = |(extAddend << (56 - shift));
+            if (shift >= 56) extAddend = 0;
+            else extAddend = extAddend >> shift;
 
-            if (a[63] == b[63]) begin // addition
-                sumSig = extAugend + extAddend; // Add significands
+            if (a[63] == b[63]) begin
+                sumSig = {1'b0, extAugend} + {1'b0, extAddend};
+                if (sumSig[56]) begin expResult = expResult + 1; sticky = sticky | sumSig[0]; sumSig = sumSig >> 1; end
 
-                // Normalize the result
-                if (sumSig[56]) begin
-                    expResult = expResult + 1; // Normalize if the result is too large
-                    sticky = sticky | sumSig[0]; // Update sticky bit with the bit that will be shifted out
-                    sumSig = sumSig >> 1;
-                end
-
-                // Rounding
-                guard = sumSig[2];
-                round_bit = sumSig[1];
-                sticky = sticky | sumSig[0]; // Update sticky bit with the bit that will be shifted out
-
-
-                sigFinal = sumSig[55:3]; // The final significand after shifting out the guard, round, and sticky bits
-                if (guard & (round_bit | sumSig[3] | sticky)) begin
+                guard = sumSig[2]; round_bit = sumSig[1]; sticky = sticky | sumSig[0];
+                sigFinal = sumSig[55:3];
+                if (guard & (round_bit | sigFinal[0] | sticky)) begin
                     sigFinal = sigFinal + 1;
-                    if (sigFinal == 53'h20000000000000) begin
-                        expResult = expResult + 1; // Handle rounding overflow
-                        sigFinal = 53'h10000000000000; // Reset to normalized value
-                    end
+                    if (sigFinal == 53'h20000000000000) begin expResult = expResult + 1; sigFinal = 53'h10000000000000; end
                 end
 
-                if (expResult >= 2047) begin
-                    result = 64'h7ff0000000000000; // Overflow to Infinity
-                end else if (expResult < -1074) begin
-                    result = {sign, 63'h0}; // Underflow to Zero
-                end else if (expResult <= 0) begin
-                        shiftAmount = 1 - expResult; // Calculate how much to shift for subnormal
-                        if (shiftAmount < 53) begin
-                            sigFinal = sigFinal >> shiftAmount; // Shift to create subnormal result
-                            result = {sign, 11'h0, sigFinal[51:0]}; // Subnormal result
-                        end else begin
-                            result = {sign, 63'h0}; // Underflow to Zero
-                        end
-                end else begin
-                    result = {sign, expResult[10:0], sigFinal[51:0]};
-                end
-            end else begin // subtraction
-                diffSig = extAugend - extAddend; // Subtract significands
+                // Check if result is actually subnormal (no leading 1)
+                if (sigFinal[52] == 0 && expResult == 1) expResult = 0;
 
-                if (diffSig == 0) begin
-                    result = {sign, 63'h0}; // Result is zero
-                end else begin
+                if (expResult >= 2047) result = {sign, 11'h7ff, 52'h0};
+                else if (expResult <= 0) result = {sign, 11'h0, sigFinal[51:0]};
+                else result = {sign, expResult[10:0], sigFinal[51:0]};
+            end else begin
+                diffSig = {1'b0, extAugend} - {1'b0, extAddend};
+                if (diffSig == 0) result = 64'h0000000000000000;
+                else begin
                     shiftAmount = count_leading_zeros(diffSig[55:0]);
-                    
-                    if (shiftAmount < expResult) begin
-                        expResult = expResult - shiftAmount; // Adjust exponent for normalization
-                        diffSig = diffSig << shiftAmount; // Normalize the significand
+                    if ($signed({7'b0, shiftAmount}) < expResult) begin
+                        expResult = expResult - $signed({7'b0, shiftAmount});
+                        diffSig = diffSig << shiftAmount;
                     end else begin
-                        diffSig = diffSig << (expResult - 1); // Shift to create subnormal result
-                        expResult = 0; // Handle the case where the leading bit is just below the guard bit
-                    end
-                    // Rounding
-                    guard = diffSig[2];
-                    round_bit = diffSig[1];
-                    sticky = sticky | diffSig[0]; // Update sticky bit with the bit that will be shifted out
-                    
-                    sigFinal = diffSig[55:3]; // The final significand after shifting out the guard, round, and sticky bits
-                    if (guard & (round_bit | diffSig[3] | sticky)) begin
-                        sigFinal = sigFinal + 1;
-                        if (sigFinal == 53'h20000000000000) begin
-                            expResult = expResult + 1; // Handle rounding overflow
-                            sigFinal = 53'h10000000000000; // Reset to normalized value
-                        end
+                        if (expResult > 1) diffSig = diffSig << (expResult - 1);
+                        expResult = 0;
                     end
 
-                    if (expResult < -1074) begin
-                        result = {sign, 63'h0};
-                    end else begin
-                        result = {sign, expResult[10:0], sigFinal[51:0]};
+                    guard = diffSig[2]; round_bit = diffSig[1]; sticky = sticky | diffSig[0];
+                    sigFinal = diffSig[55:3];
+                    if (guard & (round_bit | sigFinal[0] | sticky)) begin
+                        sigFinal = sigFinal + 1;
+                        if (sigFinal == 53'h20000000000000) begin expResult = expResult + 1; sigFinal = 53'h10000000000000; end
                     end
+
+                    if (sigFinal[52] == 0 && expResult == 1) expResult = 0;
+
+                    if (expResult >= 2047) result = {sign, 11'h7ff, 52'h0};
+                    else if (expResult <= 0) result = {sign, 11'h0, sigFinal[51:0]};
+                    else result = {sign, expResult[10:0], sigFinal[51:0]};
                 end
             end
         end
@@ -301,11 +197,11 @@ endmodule
 module fpu_div(input [63:0] a, input [63:0] b, output reg [63:0] result);
     wire aNan, aInf, aZero, aSubnormal, aNormal;
     wire bNan, bInf, bZero, bSubnormal, bNormal;
-
     fpu_class classA(.f(a), .nan(aNan), .infinity(aInf), .zero(aZero), .subnormal(aSubnormal), .normal(aNormal));
     fpu_class classB(.f(b), .nan(bNan), .infinity(bInf), .zero(bZero), .subnormal(bSubnormal), .normal(bNormal));
 
-    function [5:0] count_leading_zeros(input [52:0] sig);
+    function [5:0] count_leading_zeros;
+        input [52:0] sig;
         integer i;
         begin : clz_loop
             count_leading_zeros = 0;
@@ -316,101 +212,107 @@ module fpu_div(input [63:0] a, input [63:0] b, output reg [63:0] result);
         end
     endfunction
 
-    reg [56:0] q;
-    reg[109:0] dividend;
-    reg[52:0] divisor;
-    reg [109:0] r;
-    reg guard, round_bit, sticky;
-    reg [52:0] sigFinal;
-    reg signed [12:0] shiftAmount;
     reg sign;
-
-    reg signed [10:0] expResult;
+    reg signed [12:0] expA, expB, expResult, shiftAmount;
+    reg [52:0] sigA, sigB, sigFinal;
+    reg [55:0] q;
+    reg [109:0] dividend;
+    reg [109:0] rem;
+    reg [5:0] shift;
+    reg guard, round_bit, sticky;
     integer i;
 
-    reg signed [12:0] expA, expB;
-    reg [52:0] sigA, sigB;
-    reg [5:0] shift;
-
     always @(*) begin
-        
         sign = a[63] ^ b[63];
-        if (aNan | bNan | bZero | (aInf & bInf)) begin
-            result = 64'h7ff8000000000000; // NaN
-        end else if (bInf & (aNormal | aSubnormal)) begin
-            result = {sign, 63'h0}; // Zero
-        end else if (aZero) begin
-            result = {sign, 63'h0}; // Zero
+        if (aNan | bNan) begin
+            result = 64'h7ff8000000000000;
+        end else if (aInf & bInf) begin
+            result = {1'b1, 11'h7ff, 1'b1, 51'h0};
         end else if (aInf) begin
             result = {sign, 11'h7ff, 52'h0};
+        end else if (bZero) begin
+            result = 64'h7ff8000000000000;
+        end else if (aZero) begin
+            result = {sign, 63'h0};
+        end else if (bInf) begin
+            result = {sign, 63'h0};
         end else begin
-            // For normal and subnormal numbers, we would need to implement the actual division logic, which is complex and involves handling the exponent and significand separately. This is a placeholder for the actual division logic.
             sigA = {aNormal, a[51:0]};
             sigB = {bNormal, b[51:0]};
-
-            if (aNormal) begin
-                expA = a[62:52] - 1023;
-            end else begin
-                shift = count_leading_zeros(sigA);
-                sigA = sigA << shift;
-                expA = -1022 - shift;
-            end
-            if (bNormal) begin
-                expB = b[62:52] - 1023;
-            end else begin
-                shift = count_leading_zeros(sigB);
-                sigB = sigB << shift;
-                expB = -1022 - shift;
-            end
+            if (aNormal) expA = $signed({1'b0, a[62:52]}) - 1023;
+            else begin shift = count_leading_zeros(sigA); sigA = sigA << shift; expA = -1022 - $signed({7'b0, shift}); end
+            if (bNormal) expB = $signed({1'b0, b[62:52]}) - 1023;
+            else begin shift = count_leading_zeros(sigB); sigB = sigB << shift; expB = -1022 - $signed({7'b0, shift}); end
 
             expResult = expA - expB + 1023;
 
-            divisor = {bNormal, b[51:0]};
-            dividend = {57'b0, aNormal, a[51:0]} << 55;
-            begin
-                q = 0;
-                r = 0;
-                for (i = 55; i >= 0; i = i - 1) begin
-                    r = (r << 1) | dividend[i];
-                    q = (q << 1) | ((r < divisor) ? 0 : 1);
-                    r = (r < divisor) ? r : r - divisor;
+            // 110-bit dividend: sigA at bits [107:55], zeros below
+            dividend = {2'b0, sigA, 55'b0};
+            rem = 0;
+            q = 0;
+            for (i = 109; i >= 0; i = i - 1) begin
+                rem = (rem << 1) | {{109{1'b0}}, dividend[i]};
+                if (rem >= {57'b0, sigB}) begin
+                    rem = rem - {57'b0, sigB};
+                    if (i < 56) q[i] = 1;
                 end
             end
 
-            if (q[56]) begin
-                expResult = expResult + 1; // Normalize if the result is too large
-                q = q >> 1;
-            end
-            
-            // Rounding
-            sticky = (r != 0);
-            guard = q[2];
-            round_bit = q[1];
-            sticky = sticky | q[0]; // Update sticky bit with the bit that will be shifted out
-            
-            sigFinal = q[55:3]; // The final significand after shifting out the guard, round, and sticky bits
-            if (guard & (round_bit | q[3] | sticky)) begin
-                sigFinal = sigFinal + 1;
-                if (sigFinal == 53'h20000000000000) begin
-                    expResult = expResult + 1; // Handle rounding overflow
-                    sigFinal = 53'h10000000000000; // Reset to normalized value
+            // Normalize: if sigA < sigB, leading 1 is at bit 54
+            if (!q[55]) begin
+                expResult = expResult - 1;
+                q = q << 1;
+                // Get one more bit from remainder
+                rem = rem << 1;
+                if (rem >= {57'b0, sigB}) begin
+                    q[0] = 1;
+                    rem = rem - {57'b0, sigB};
                 end
             end
+
+            sigFinal = q[55:3];
 
             if (expResult >= 2047) begin
                 result = {sign, 11'h7ff, 52'h0};
-            end else if (expResult < -1074) begin
-                result = {sign, 63'h0};
             end else if (expResult <= 0) begin
-                shiftAmount = 1 - expResult; // Calculate how much to shift for subnormal
-                if (shiftAmount < 53) begin
-                    sigFinal = sigFinal >> shiftAmount; // Shift to create subnormal result
-                    result = {sign, 11'h0, sigFinal[51:0]}; // Subnormal result
+                shiftAmount = 1 - expResult;
+                if (shiftAmount < 56) begin
+                    // Re-round after subnormal shift using the full quotient
+                    begin : subnorm_div_block
+                        reg [56:0] q_shifted;
+                        reg [56:0] shifted_out_mask;
+                        reg sub_guard, sub_round, sub_sticky;
+                        integer si;
+                        
+                        // Compute sticky from all bits that will be shifted out
+                        sub_sticky = (rem != 0);
+                        for (si = 0; si < shiftAmount && si < 56; si = si + 1)
+                            sub_sticky = sub_sticky | q[si];
+                        
+                        q_shifted = q >> shiftAmount;
+                        sub_guard = q_shifted[2];
+                        sub_round = q_shifted[1];
+                        sub_sticky = sub_sticky | q_shifted[0];
+                        sigFinal = q_shifted[55:3];
+                        
+                        if (sub_guard & (sub_round | sigFinal[0] | sub_sticky))
+                            sigFinal = sigFinal + 1;
+                    end
+                    result = {sign, 11'h0, sigFinal[51:0]};
                 end else begin
-                    result = {sign, 63'h0}; // Underflow to Zero
+                    result = {sign, 63'h0};
                 end
             end else begin
-                result = {sign, expResult[10:0], sigFinal[51:0]};
+                // Normal result: apply standard rounding
+                guard = q[2];
+                round_bit = q[1];
+                sticky = q[0] | (rem != 0);
+                if (guard & (round_bit | sigFinal[0] | sticky)) begin
+                    sigFinal = sigFinal + 1;
+                    if (sigFinal == 53'h20000000000000) begin expResult = expResult + 1; sigFinal = 53'h10000000000000; end
+                end
+                if (expResult >= 2047) result = {sign, 11'h7ff, 52'h0};
+                else result = {sign, expResult[10:0], sigFinal[51:0]};
             end
         end
     end
