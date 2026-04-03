@@ -31,8 +31,8 @@ module tinker_core(
 
     // ALU
     wire [63:0] alu_result;
-    wire [63:0] branch_target;
-    wire branch_taken;
+    wire [63:0] alu_branch_target;
+    wire alu_branch_taken;
 
     // Control Instruction type classification
     wire is_alu_reg; // add, sub, mul, div, and, or, xor, not, shftr, shftl, fadd, fsub, fmul, fpu_div_result
@@ -69,14 +69,14 @@ module tinker_core(
     memory_unit memory(
         .clk(clk),
         .reset(reset),
-        .instr_address(PC),
+        .PC(PC),
         .instruction(instruction),
         .data_address(alu_result), // rd + L
         .data_out(mem_read_data),
         .data_ready(mem_data_ready),
         .write_enable(mem_write_en),
-        .write_address(writeback_data),
-        .write_data(reg_data2)
+        .write_address(alu_result),
+        .write_data(mem_write_data)
     );
     
     instruction_decoder dec(
@@ -94,15 +94,14 @@ module tinker_core(
                         rt_data;
 
 
-    assign next_PC = is_halt ? PC : 
-                    is_return ? mem_read_data :
+    assign next_PC = is_return ? mem_read_data :
                     alu_branch_taken ? alu_branch_target :
                     (PC + 64'd4);
     
     wire [63:0] writeback_data;
     assign writeback_data = (opcode == 5'h10) ? mem_read_data : alu_result;
 
-    register_file regfile(
+    register reg_file(
         .clk(clk),
         .reset(reset),
         .write_enable(reg_write_en),
@@ -111,11 +110,10 @@ module tinker_core(
         .read_sel1(rd),
         .read_sel2(rs),
         .read_sel3(rt),
-        .read_r31(31),
         .read_data1(rd_data),
-        .read_data2(rs_data)
-        .read_data3(rt_data)
-        .read_data3(r31_data)
+        .read_data2(rs_data),
+        .read_data3(rt_data),
+        .read_r31(r31_data)
     );
 
     
@@ -128,7 +126,7 @@ module tinker_core(
         .r31_data(r31_data),
         .L_data(extended_L),
         .result(alu_result),
-        .branch_target(alu_branch_target)
+        .branch_target(alu_branch_target),
         .branch_taken(alu_branch_taken)
     );
     

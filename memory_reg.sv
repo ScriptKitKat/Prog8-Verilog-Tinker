@@ -2,11 +2,11 @@
 `define START 16'h2000
 
 module memory_unit(
-    input clock,
+    input clk,
     input reset,
     // instruction fetch
     input [63:0] PC,
-    output instruction,
+    output [31:0] instruction,
     // data load
     input [63:0] data_address,
     output [63:0] data_out,
@@ -16,7 +16,7 @@ module memory_unit(
     input [63:0] write_address,
     input [63:0] write_data
 );
-    reg [7:0] memory [0:`MEM_SIZE - 1]
+    reg [7:0] memory [0:`MEM_SIZE - 1];
 
     assign instruction = {memory[PC + 3], memory[PC + 2], memory[PC + 1], memory[PC]};
 
@@ -50,7 +50,8 @@ module register(
     input [4:0] read_sel3,
     output [63:0] read_data1,
     output [63:0] read_data2,
-    output [63:0] read_data3
+    output [63:0] read_data3,
+    output [63:0] read_r31
 );
     reg [63:0] registers [31:0];
 
@@ -58,6 +59,7 @@ module register(
     assign read_data1 = registers[read_sel1];
     assign read_data2 = registers[read_sel2];
     assign read_data3 = registers[read_sel3];
+    assign read_r31 = registers[31];
 
     integer i;
     always @(posedge clk or posedge reset) begin

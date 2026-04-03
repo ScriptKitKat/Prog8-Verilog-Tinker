@@ -46,8 +46,9 @@ module ALU(
     );
 
     always @(*) begin
-        result = 64'b0
+        result = 64'b0;
         branch_target = PC + 64'd4;
+        branch_taken = 1'b0;
         case (opcode)
             5'h18: result = rs_data + rt_data; // ADD
             5'h19: result = rd_data + L_data; // ADDI
@@ -114,6 +115,7 @@ module ALU(
             5'h15: result = fpu_sub_result; // FSUB
             5'h16: result = fpu_mul_result; // FMUL
             5'h17: result = fpu_div_result; // FDIV
+            default: result = 64'b0;
         endcase
     end
 endmodule
