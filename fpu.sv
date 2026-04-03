@@ -36,13 +36,15 @@ module fpu_mul(input [63:0] a, input [63:0] b, output reg [63:0] result);
 
     reg [5:0] shift;
     reg signed [12:0] expA, expB;
-    reg signed [10:0] expResult;
+    reg signed [12:0] expResult;
     reg [105:0] sigResult;
     reg sign;
 
     always @(*) begin
-        if (aNan | bNan | (aInf & bZero) | (bInf & aZero)) begin
-            result = 64'h7ff8000000000000; // NaN
+        if (aNan | bNan) begin
+            result = 64'h7ff8000000000000; // propagated NaN
+        end else if ((aInf & bZero) | (bInf & aZero)) begin
+            result = 64'h7ff8000000000000; // generated NaN (inf*0)
         end else if ((aInf & ~bZero) | (~aZero & bInf)) begin
             result = {a[63] ^ b[63], 11'h7ff, 52'h0};
         end else if (aZero | bZero) begin
@@ -137,9 +139,9 @@ module fpu_add(input [63:0] a, input [63:0] b, output reg [63:0] result);
 
     reg [52:0] augendSig;
     reg [52:0] addendSig;
-    reg signed [10:0] shift;
-    reg signed [10:0] expResult;
-    reg signed [10:0] expA, expB;
+    reg signed [12:0] shift;
+    reg signed [12:0] expResult;
+    reg signed [12:0] expA, expB;
     reg sign;
 
     reg guard, round_bit, sticky;
@@ -149,14 +151,14 @@ module fpu_add(input [63:0] a, input [63:0] b, output reg [63:0] result);
 
     reg [56:0] sumSig;
     reg [56:0] diffSig;
-    reg[5:0] shiftAmount;
+    reg [12:0] shiftAmount;
 
     always @(*) begin
         if (aNan | bNan) begin
-            result = 64'h7ff8000000000000; // NaN
+            result = 64'h7ff8000000000000; // propagated NaN
         end else if ((aInf | bInf)) begin
             if ((aInf & bInf) & (a[63] ^ b[63])) begin
-                result = 64'h7ff8000000000000; // NaN
+                result = 64'hfff8000000000000; // generated NaN (inf - inf)
             end else begin
                 if (aInf & ~bInf) begin
                     result = a;
@@ -181,18 +183,18 @@ module fpu_add(input [63:0] a, input [63:0] b, output reg [63:0] result);
                 addendSig[52:0] = {bNormal, b[51:0]};
                 sign = a[63];
                 expResult = expA;
-                shift = a[62:52] - b[62:52];
-                // a has larger exponent, align b to a
+                shift = expA - expB;
             end else if (expA < expB) begin
                 augendSig[52:0] = {bNormal, b[51:0]};
                 addendSig[52:0] = {aNormal, a[51:0]};
                 sign = b[63];
                 expResult = expB;
-                shift = b[62:52] - a[62:52];
-                // b has larger exponent, align a to b
+                shift = expB - expA;
             end else begin
+                shift = 0;
+                expResult = expA;
                 if (a[63] == b[63]) begin
-                    sign = a[63]; // If exponents are equal, use the sign of a (or b, since they are the same)
+                    sign = a[63];
                     augendSig[52:0] = {aNormal, a[51:0]};
                     addendSig[52:0] = {bNormal, b[51:0]};
                 end else begin
@@ -244,7 +246,7 @@ module fpu_add(input [63:0] a, input [63:0] b, output reg [63:0] result);
                 end
 
                 if (expResult >= 2047) begin
-                    result = 64'h7ff0000000000000; // Overflow to Infinity
+                    result = {sign, 11'h7ff, 52'h0}; // Overflow to Infinity
                 end else if (expResult < -1074) begin
                     result = {sign, 63'h0}; // Underflow to Zero
                 end else if (expResult <= 0) begin
@@ -325,7 +327,7 @@ module fpu_div(input [63:0] a, input [63:0] b, output reg [63:0] result);
     reg signed [12:0] shiftAmount;
     reg sign;
 
-    reg signed [10:0] expResult;
+    reg signed [12:0] expResult;
     integer i;
 
     reg signed [12:0] expA, expB;
@@ -336,9 +338,9 @@ module fpu_div(input [63:0] a, input [63:0] b, output reg [63:0] result);
 
         sign = a[63] ^ b[63];
         if (aNan | bNan) begin
-            result = 64'h7ff8000000000000; // NaN
+            result = 64'h7ff8000000000000; // propagated NaN
         end else if (aInf & bInf) begin
-            result = 64'h7ff8000000000000; // NaN (inf/inf)
+            result = 64'hfff8000000000000; // generated NaN (inf/inf)
         end else if (aInf) begin
             result = {sign, 11'h7ff, 52'h0}; // inf/anything = inf
         end else if (bZero) begin
