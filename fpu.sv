@@ -372,34 +372,45 @@ module fpu_div(input [63:0] a, input [63:0] b, output reg [63:0] result);
             expResult = expA - expB + 1023;
 
             divisor = sigB;
-            dividend = {57'b0, sigA} << 55;
-            begin
-                q = 0;
-                r = 0;
-                for (i = 55; i >= 0; i = i - 1) begin
-                    r = (r << 1) | dividend[i];
-                    q = (q << 1) | ((r < divisor) ? 0 : 1);
-                    r = (r < divisor) ? r : r - divisor;
+            q = 0;
+            r = {57'b0, sigA};
+
+            // Initial quotient bit (integer part of sigA/sigB)
+            if (r >= {57'b0, divisor}) begin
+                r = r - {57'b0, divisor};
+                q[0] = 1'b1;
+            end
+
+            // Generate 56 fractional quotient bits
+            for (i = 0; i < 56; i = i + 1) begin
+                r = r << 1;
+                q = q << 1;
+                if (r >= {57'b0, divisor}) begin
+                    r = r - {57'b0, divisor};
+                    q[0] = 1'b1;
                 end
             end
 
+            // Normalize so q[55] is the leading 1
             if (q[56]) begin
-                expResult = expResult + 1; // Normalize if the result is too large
+                sticky = q[0] | (r != 0);
                 q = q >> 1;
+            end else begin
+                expResult = expResult - 1;
+                sticky = (r != 0);
             end
-            
-            // Rounding
-            sticky = (r != 0);
+
+            // Rounding (round to nearest even)
             guard = q[2];
             round_bit = q[1];
-            sticky = sticky | q[0]; // Update sticky bit with the bit that will be shifted out
-            
-            sigFinal = q[55:3]; // The final significand after shifting out the guard, round, and sticky bits
-            if (guard & (round_bit | q[3] | sticky)) begin
+            sticky = sticky | q[0];
+
+            sigFinal = q[55:3];
+            if (guard & (round_bit | sigFinal[0] | sticky)) begin
                 sigFinal = sigFinal + 1;
                 if (sigFinal == 53'h20000000000000) begin
-                    expResult = expResult + 1; // Handle rounding overflow
-                    sigFinal = 53'h10000000000000; // Reset to normalized value
+                    expResult = expResult + 1;
+                    sigFinal = 53'h10000000000000;
                 end
             end
 
